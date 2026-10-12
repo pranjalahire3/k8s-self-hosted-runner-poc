@@ -1,0 +1,29 @@
+
+name: Kubernetes Self-Hosted Runner Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  runner-test:
+    runs-on: arc-runner-set
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify runner environment
+        run: |
+          echo "GitHub Actions self-hosted runner test"
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Runner name: $RUNNER_NAME"
+          echo "Operating system: $RUNNER_OS"
+          echo "Architecture: $RUNNER_ARCH"
+          echo "Hostname:"
+          hostname
+          echo "Current user:"
+          id
+          echo "Test completed successfully"
