@@ -1,5 +1,4 @@
-
-name: Kubernetes Self-Hosted Runner Test
+name: ARC CI/CD Demo
 
 on:
   workflow_dispatch:
@@ -8,22 +7,97 @@ on:
       - main
 
 jobs:
-  runner-test:
+  build:
+    name: Checkout and Build Image
     runs-on: arc-runner-set
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify runner environment
+      - name: Verify repository files
         run: |
-          echo "GitHub Actions self-hosted runner test"
+          set -eu
+          test -f Dockerfile
+          test -f README.md
+          test -f app/index.html
+          echo "Repository checkout successful."
+          echo "Dockerfile, README.md and app/index.html are present."
+
+      - name: Display runner details
+        run: |
+          echo "Runner: $RUNNER_NAME"
           echo "Repository: $GITHUB_REPOSITORY"
-          echo "Runner name: $RUNNER_NAME"
-          echo "Operating system: $RUNNER_OS"
-          echo "Architecture: $RUNNER_ARCH"
-          echo "Hostname:"
-          hostname
-          echo "Current user:"
+          echo "Commit: $GITHUB_SHA"
+          echo "Runner OS: $RUNNER_OS"
+          echo "Runner architecture: $RUNNER_ARCH"
+
+      - name: Inspect runner build capabilities
+        run: |
+          echo "=== User ==="
           id
-          echo "Test completed successfully"
+
+          echo "=== Kernel ==="
+          uname -r
+
+          echo "=== User namespace settings ==="
+          for file in \
+            /proc/sys/kernel/unprivileged_userns_clone \
+            /proc/sys/user/max_user_namespaces
+          do
+            if [ -r "$file" ]; then
+              printf '%s: ' "$file"
+              cat "$file"
+            else
+              echo "$file: unavailable"
+            fi
+          done
+
+          echo "=== UID/GID mapping utilities ==="
+          command -v newuidmap || true
+          command -v newgidmap || true
+
+          echo "=== Docker socket ==="
+          if [ -S /var/run/docker.sock ]; then
+            echo "Docker socket exists"
+          else
+            echo "Docker socket is absent"
+          fi
+
+          echo "=== BuildKit utilities ==="
+          command -v buildctl || true
+          command -v buildkitd || true
+
+          echo "=== Disk space ==="
+          df -h "$PWD"
+
+      - name: Build image with rootless BuildKit
+        if: false
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          driver-opts: |
+            image=moby/buildkit:rootless
+          buildkitd-flags: --oci-worker-no-process-sandbox
+          install: false
+
+      - name: Build container image
+        if: false
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: arc-ci-cd-demo:${{ github.sha }}
+          push: false
+          outputs: type=cacheonly
+
+      - name: Image push stage (demo only)
+        run: |
+          echo "Image build stage completed."
+          echo "DEMO ONLY: Image push is not configured."
+          echo "No image was pushed to a registry."
+
+      - name: Deployment stage (demo only)
+        run: |
+          echo "DEMO ONLY: Deployment stage reached."
+          echo "No Kubernetes resources were changed."
