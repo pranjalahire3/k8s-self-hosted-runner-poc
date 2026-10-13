@@ -1,4 +1,4 @@
-name: ARC CI/CD Demo
+name: ARC Runner POC
 
 on:
   workflow_dispatch:
@@ -31,68 +31,76 @@ jobs:
             fi
           done
 
-      - name: Display runner information
+          echo "=== Git commit ==="
+          git rev-parse HEAD
+
+      - name: Runner information
         run: |
-          echo "Runner name: $RUNNER_NAME"
-          echo "Runner OS: $RUNNER_OS"
-          echo "Runner architecture: $RUNNER_ARCH"
+          echo "=== Runner identity ==="
+          id
+
+          echo "=== Runner details ==="
+          echo "Runner name: ${RUNNER_NAME:-unknown}"
+          echo "Runner OS: ${RUNNER_OS:-unknown}"
+          echo "Runner architecture: ${RUNNER_ARCH:-unknown}"
+
+          echo "=== Kernel version ==="
+          uname -r
 
       - name: Inspect runner build capabilities
         run: |
-          echo "=== User ==="
-          id
-
-          echo "=== Kernel ==="
+          echo "=== Kernel version ==="
           uname -r
 
-          echo "=== User namespace settings ==="
-          for file in \
-            /proc/sys/kernel/unprivileged_userns_clone \
-            /proc/sys/user/max_user_namespaces
-          do
-            if [ -r "$file" ]; then
-              printf '%s: ' "$file"
-              cat "$file"
-            else
-              echo "$file: unavailable"
-            fi
-          done
+          echo "=== Unprivileged user namespace settings ==="
+          if [ -r /proc/sys/kernel/unprivileged_userns_clone ]; then
+            cat /proc/sys/kernel/unprivileged_userns_clone
+          else
+            echo "kernel.unprivileged_userns_clone: unavailable"
+          fi
+
+          if [ -r /proc/sys/user/max_user_namespaces ]; then
+            cat /proc/sys/user/max_user_namespaces
+          else
+            echo "user.max_user_namespaces: unavailable"
+          fi
 
           echo "=== UID/GID mapping utilities ==="
           for cmd in newuidmap newgidmap; do
             if command -v "$cmd" >/dev/null 2>&1; then
-              path="$(command -v "$cmd")"
-              echo "$cmd: $path"
-              ls -l "$path"
+              command -v "$cmd"
             else
               echo "$cmd: not found in PATH"
             fi
           done
 
-          echo "=== Subordinate UID/GID mappings ==="
-          for file in /etc/subuid /etc/subgid; do
-            if [ -r "$file" ]; then
-              grep "^runner:" "$file" || echo "No runner entry in $file"
-            else
-              echo "$file: unavailable or unreadable"
-            fi
-          done
-
-          echo "=== User namespace support ==="
-          if command -v unshare >/dev/null 2>&1; then
-            if unshare -Ur true; then
-              echo "Unprivileged user namespace test: PASS"
-            else
-              echo "Unprivileged user namespace test: FAIL"
-            fi
+          echo "=== Runner subordinate UID/GID configuration ==="
+          if [ -r /etc/subuid ]; then
+            grep '^runner:' /etc/subuid || echo "No runner entry in /etc/subuid"
           else
-            echo "unshare: not installed"
+            echo "/etc/subuid: unavailable"
           fi
 
-          echo "=== Docker socket ==="
+          if [ -r /etc/subgid ]; then
+            grep '^runner:' /etc/subgid || echo "No runner entry in /etc/subgid"
+          else
+            echo "/etc/subgid: unavailable"
+          fi
+
+          echo "=== User namespace test ==="
+          if command -v unshare >/dev/null 2>&1; then
+            if unshare -Ur true; then
+              echo "unshare -Ur: PASS"
+            else
+              echo "unshare -Ur: FAIL"
+            fi
+          else
+            echo "unshare: not found in PATH"
+          fi
+
+          echo "=== Docker socket check ==="
           if [ -S /var/run/docker.sock ]; then
             echo "Docker socket exists"
-            ls -l /var/run/docker.sock
           else
             echo "Docker socket is absent"
           fi
@@ -106,16 +114,32 @@ jobs:
             fi
           done
 
-          echo "=== Filesystem capacity ==="
+          echo "=== Workspace filesystem ==="
           df -h "$PWD"
+
+      - name: Inspect runner security restrictions
+        run: |
+          echo "=== Process security status ==="
+          grep -E '^(Uid|Gid|NoNewPrivs|Seccomp|CapInh|CapPrm|CapEff|CapBnd|CapAmb):' /proc/self/status || true
+
+          echo "=== UID map ==="
+          cat /proc/self/uid_map
+
+          echo "=== GID map ==="
+          cat /proc/self/gid_map
+
+          echo "=== Available diagnostic tools ==="
+          for cmd in unshare newuidmap newgidmap; do
+            if command -v "$cmd" >/dev/null 2>&1; then
+              command -v "$cmd"
+            else
+              echo "$cmd: not found in PATH"
+            fi
+          done
 
       - name: Rootless BuildKit setup (disabled)
         if: false
         uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
-          driver-opts: |
-            image=moby/buildkit:rootless
 
       - name: Build container image (disabled)
         if: false
@@ -123,19 +147,11 @@ jobs:
         with:
           context: .
           push: false
-          tags: arc-runner-poc:latest
+          tags: arc-runner-poc:test
 
-      - name: Image build stage
+      - name: POC completion
         run: |
-          echo "Image build stage completed."
-          echo "Actual image building is not enabled."
-
-      - name: Image push stage
-        run: |
-          echo "DEMO ONLY: Image push is not configured."
+          echo "Runner diagnostics completed."
+          echo "Image build stage was not enabled."
           echo "No image was pushed to a registry."
-
-      - name: Deployment stage
-        run: |
-          echo "DEMO ONLY: Deployment stage reached."
           echo "No Kubernetes resources were changed."
