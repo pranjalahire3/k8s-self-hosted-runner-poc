@@ -137,6 +137,33 @@ jobs:
             fi
           done
 
+      - name: Test rootless UID/GID mappings
+        run: |
+          echo "=== Current identity ==="
+          id
+
+          echo "=== Current UID/GID maps ==="
+          cat /proc/self/uid_map
+          cat /proc/self/gid_map
+
+          echo "=== Test unprivileged UID/GID mapping ==="
+          if unshare -Ur sh -c '
+            echo "Inside new user namespace:"
+            id
+            echo "UID map:"
+            cat /proc/self/uid_map
+            echo "GID map:"
+            cat /proc/self/gid_map
+          '; then
+            echo "Basic user namespace mapping: PASS"
+          else
+            echo "Basic user namespace mapping: FAIL"
+          fi
+
+          echo "=== Test subordinate ID mapping files ==="
+          grep "^runner:" /etc/subuid || true
+          grep "^runner:" /etc/subgid || true
+
       - name: Rootless BuildKit setup (disabled)
         if: false
         uses: docker/setup-buildx-action@v3
