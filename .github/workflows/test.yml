@@ -164,6 +164,17 @@ jobs:
           grep "^runner:" /etc/subuid || true
           grep "^runner:" /etc/subgid || true
 
+          echo "=== Check UID/GID mapping helper locations ==="
+          for f in /usr/bin/newuidmap /usr/sbin/newuidmap /usr/bin/newgidmap /usr/sbin/newgidmap; do
+            if [ -x "$f" ]; then
+              echo "$f: executable"
+            elif [ -e "$f" ]; then
+              echo "$f: exists but is not executable"
+            else
+              echo "$f: missing"
+            fi
+          done
+
       - name: Rootless BuildKit setup (disabled)
         if: false
         uses: docker/setup-buildx-action@v3
