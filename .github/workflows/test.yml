@@ -7,8 +7,7 @@ on:
       - main
 
 jobs:
-  build:
-    name: Checkout and Build Image
+  runner-test:
     runs-on: arc-runner-set
 
     steps:
@@ -18,17 +17,23 @@ jobs:
       - name: Verify repository files
         run: |
           set -eu
-          test -f Dockerfile
-          test -f README.md
-          test -f app/index.html
-          echo "Repository checkout successful."
-          echo "Dockerfile, README.md and app/index.html are present."
+          echo "=== Repository files ==="
+          pwd
+          ls -la
 
-      - name: Display runner details
+          echo "=== Required files ==="
+          for file in Dockerfile README.md app/index.html; do
+            if [ -f "$file" ]; then
+              echo "PASS: $file exists"
+            else
+              echo "FAIL: $file is missing"
+              exit 1
+            fi
+          done
+
+      - name: Display runner information
         run: |
-          echo "Runner: $RUNNER_NAME"
-          echo "Repository: $GITHUB_REPOSITORY"
-          echo "Commit: $GITHUB_SHA"
+          echo "Runner name: $RUNNER_NAME"
           echo "Runner OS: $RUNNER_OS"
           echo "Runner architecture: $RUNNER_ARCH"
 
@@ -54,50 +59,83 @@ jobs:
           done
 
           echo "=== UID/GID mapping utilities ==="
-          command -v newuidmap || true
-          command -v newgidmap || true
+          for cmd in newuidmap newgidmap; do
+            if command -v "$cmd" >/dev/null 2>&1; then
+              path="$(command -v "$cmd")"
+              echo "$cmd: $path"
+              ls -l "$path"
+            else
+              echo "$cmd: not found in PATH"
+            fi
+          done
+
+          echo "=== Subordinate UID/GID mappings ==="
+          for file in /etc/subuid /etc/subgid; do
+            if [ -r "$file" ]; then
+              grep "^runner:" "$file" || echo "No runner entry in $file"
+            else
+              echo "$file: unavailable or unreadable"
+            fi
+          done
+
+          echo "=== User namespace support ==="
+          if command -v unshare >/dev/null 2>&1; then
+            if unshare -Ur true; then
+              echo "Unprivileged user namespace test: PASS"
+            else
+              echo "Unprivileged user namespace test: FAIL"
+            fi
+          else
+            echo "unshare: not installed"
+          fi
 
           echo "=== Docker socket ==="
           if [ -S /var/run/docker.sock ]; then
             echo "Docker socket exists"
+            ls -l /var/run/docker.sock
           else
             echo "Docker socket is absent"
           fi
 
-          echo "=== BuildKit utilities ==="
-          command -v buildctl || true
-          command -v buildkitd || true
+          echo "=== BuildKit tools ==="
+          for cmd in buildctl buildkitd; do
+            if command -v "$cmd" >/dev/null 2>&1; then
+              command -v "$cmd"
+            else
+              echo "$cmd: not installed"
+            fi
+          done
 
-          echo "=== Disk space ==="
+          echo "=== Filesystem capacity ==="
           df -h "$PWD"
 
-      - name: Build image with rootless BuildKit
+      - name: Rootless BuildKit setup (disabled)
         if: false
         uses: docker/setup-buildx-action@v3
         with:
           driver: docker-container
           driver-opts: |
             image=moby/buildkit:rootless
-          buildkitd-flags: --oci-worker-no-process-sandbox
-          install: false
 
-      - name: Build container image
+      - name: Build container image (disabled)
         if: false
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
-          tags: arc-ci-cd-demo:${{ github.sha }}
           push: false
-          outputs: type=cacheonly
+          tags: arc-runner-poc:latest
 
-      - name: Image push stage (demo only)
+      - name: Image build stage
         run: |
           echo "Image build stage completed."
+          echo "Actual image building is not enabled."
+
+      - name: Image push stage
+        run: |
           echo "DEMO ONLY: Image push is not configured."
           echo "No image was pushed to a registry."
 
-      - name: Deployment stage (demo only)
+      - name: Deployment stage
         run: |
           echo "DEMO ONLY: Deployment stage reached."
           echo "No Kubernetes resources were changed."
