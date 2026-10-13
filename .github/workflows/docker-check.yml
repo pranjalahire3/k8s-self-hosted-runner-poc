@@ -1,0 +1,17 @@
+name: ARC Docker Availability Check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  docker-check:
+    runs-on: arc-runner-set
+    steps:
+      - name: Check Docker availability
+        run: |
+          echo "Checking Docker on the ARC runner"
+          if ! command -v docker; then
+            echo "Docker CLI is not installed"
+            exit 1
+          fi
+          docker version
