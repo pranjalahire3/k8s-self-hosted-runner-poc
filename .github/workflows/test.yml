@@ -34,6 +34,21 @@ jobs:
           echo "=== Git commit ==="
           git rev-parse HEAD
 
+      - name: Inspect runner operating system
+        run: |
+          echo "=== Operating system ==="
+          cat /etc/os-release
+          echo "=== Package managers ==="
+          for cmd in apt-get apk dnf yum; do
+            command -v "$cmd" 2>/dev/null || true
+          done
+          echo "=== UID mapping package ==="
+          if command -v dpkg-query >/dev/null 2>&1; then
+            dpkg-query -W uidmap 2>/dev/null || echo "uidmap package not installed"
+          else
+            echo "dpkg-query unavailable"
+          fi
+
       - name: Runner information
         run: |
           echo "=== Runner identity ==="
