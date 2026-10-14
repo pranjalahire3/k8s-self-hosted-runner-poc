@@ -1,210 +1,154 @@
 name: ARC Runner POC
-
+ 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
 
+  workflow_dispatch:
+
+  push:
+
+    branches:
+
+      - main
+ 
+permissions:
+
+  contents: read
+ 
 jobs:
+
   runner-test:
+
+    name: Checkout and Image Build Test
+
     runs-on: arc-runner-set
 
+    timeout-minutes: 30
+ 
     steps:
+
       - name: Checkout repository
+
         uses: actions/checkout@v4
-
+ 
       - name: Verify repository files
+
         run: |
+
           set -eu
+ 
           echo "=== Repository files ==="
+
           pwd
+
           ls -la
-
+ 
           echo "=== Required files ==="
+
           for file in Dockerfile README.md app/index.html; do
+
             if [ -f "$file" ]; then
+
               echo "PASS: $file exists"
+
             else
-              echo "FAIL: $file is missing"
+
+              echo "FAIL: $file missing"
+
               exit 1
-            fi
-          done
 
-          echo "=== Git commit ==="
+            fi
+
+          done
+ 
+          echo "=== Git Commit ==="
+
           git rev-parse HEAD
+ 
+      - name: Runner Information
 
-      - name: Inspect runner operating system
         run: |
-          echo "=== Operating system ==="
-          cat /etc/os-release
-          echo "=== Package managers ==="
-          for cmd in apt-get apk dnf yum; do
-            command -v "$cmd" 2>/dev/null || true
-          done
-          echo "=== UID mapping package ==="
-          if command -v dpkg-query >/dev/null 2>&1; then
-            dpkg-query -W uidmap 2>/dev/null || echo "uidmap package not installed"
-          else
-            echo "dpkg-query unavailable"
-          fi
 
-      - name: Runner information
-        run: |
-          echo "=== Runner identity ==="
+          echo "=== Runner Identity ==="
+
           id
+ 
+          echo "=== Runner Details ==="
 
-          echo "=== Runner details ==="
-          echo "Runner name: ${RUNNER_NAME:-unknown}"
-          echo "Runner OS: ${RUNNER_OS:-unknown}"
-          echo "Runner architecture: ${RUNNER_ARCH:-unknown}"
+          echo "Runner: $RUNNER_NAME"
 
-          echo "=== Kernel version ==="
+          echo "OS: $RUNNER_OS"
+
+          echo "Architecture: $RUNNER_ARCH"
+ 
+          echo "=== Kernel ==="
+
           uname -r
+ 
+      - name: Verify Docker Availability
 
-      - name: Inspect runner build capabilities
         run: |
-          echo "=== Kernel version ==="
-          uname -r
 
-          echo "=== Unprivileged user namespace settings ==="
-          if [ -r /proc/sys/kernel/unprivileged_userns_clone ]; then
-            cat /proc/sys/kernel/unprivileged_userns_clone
+          echo "=== Docker CLI ==="
+
+          docker --version
+ 
+          echo "=== Docker Daemon ==="
+
+          if docker info; then
+
+            echo "PASS: Docker daemon accessible"
+
           else
-            echo "kernel.unprivileged_userns_clone: unavailable"
+
+            echo "FAIL: Docker daemon unavailable"
+
+            exit 1
+
           fi
+ 
+      - name: Setup Docker Buildx
 
-          if [ -r /proc/sys/user/max_user_namespaces ]; then
-            cat /proc/sys/user/max_user_namespaces
-          else
-            echo "user.max_user_namespaces: unavailable"
-          fi
-
-          echo "=== UID/GID mapping utilities ==="
-          for cmd in newuidmap newgidmap; do
-            if command -v "$cmd" >/dev/null 2>&1; then
-              command -v "$cmd"
-            else
-              echo "$cmd: not found in PATH"
-            fi
-          done
-
-          echo "=== Runner subordinate UID/GID configuration ==="
-          if [ -r /etc/subuid ]; then
-            grep '^runner:' /etc/subuid || echo "No runner entry in /etc/subuid"
-          else
-            echo "/etc/subuid: unavailable"
-          fi
-
-          if [ -r /etc/subgid ]; then
-            grep '^runner:' /etc/subgid || echo "No runner entry in /etc/subgid"
-          else
-            echo "/etc/subgid: unavailable"
-          fi
-
-          echo "=== User namespace test ==="
-          if command -v unshare >/dev/null 2>&1; then
-            if unshare -Ur true; then
-              echo "unshare -Ur: PASS"
-            else
-              echo "unshare -Ur: FAIL"
-            fi
-          else
-            echo "unshare: not found in PATH"
-          fi
-
-          echo "=== Docker socket check ==="
-          if [ -S /var/run/docker.sock ]; then
-            echo "Docker socket exists"
-          else
-            echo "Docker socket is absent"
-          fi
-
-          echo "=== BuildKit tools ==="
-          for cmd in buildctl buildkitd; do
-            if command -v "$cmd" >/dev/null 2>&1; then
-              command -v "$cmd"
-            else
-              echo "$cmd: not installed"
-            fi
-          done
-
-          echo "=== Workspace filesystem ==="
-          df -h "$PWD"
-
-      - name: Inspect runner security restrictions
-        run: |
-          echo "=== Process security status ==="
-          grep -E '^(Uid|Gid|NoNewPrivs|Seccomp|CapInh|CapPrm|CapEff|CapBnd|CapAmb):' /proc/self/status || true
-
-          echo "=== UID map ==="
-          cat /proc/self/uid_map
-
-          echo "=== GID map ==="
-          cat /proc/self/gid_map
-
-          echo "=== Available diagnostic tools ==="
-          for cmd in unshare newuidmap newgidmap; do
-            if command -v "$cmd" >/dev/null 2>&1; then
-              command -v "$cmd"
-            else
-              echo "$cmd: not found in PATH"
-            fi
-          done
-
-      - name: Test rootless UID/GID mappings
-        run: |
-          echo "=== Current identity ==="
-          id
-
-          echo "=== Current UID/GID maps ==="
-          cat /proc/self/uid_map
-          cat /proc/self/gid_map
-
-          echo "=== Test unprivileged UID/GID mapping ==="
-          if unshare -Ur sh -c '
-            echo "Inside new user namespace:"
-            id
-            echo "UID map:"
-            cat /proc/self/uid_map
-            echo "GID map:"
-            cat /proc/self/gid_map
-          '; then
-            echo "Basic user namespace mapping: PASS"
-          else
-            echo "Basic user namespace mapping: FAIL"
-          fi
-
-          echo "=== Test subordinate ID mapping files ==="
-          grep "^runner:" /etc/subuid || true
-          grep "^runner:" /etc/subgid || true
-
-          echo "=== Check UID/GID mapping helper locations ==="
-          for f in /usr/bin/newuidmap /usr/sbin/newuidmap /usr/bin/newgidmap /usr/sbin/newgidmap; do
-            if [ -x "$f" ]; then
-              echo "$f: executable"
-            elif [ -e "$f" ]; then
-              echo "$f: exists but is not executable"
-            else
-              echo "$f: missing"
-            fi
-          done
-
-      - name: Rootless BuildKit setup (disabled)
-        if: false
         uses: docker/setup-buildx-action@v3
+ 
+      - name: Build Docker Image
 
-      - name: Build container image (disabled)
-        if: false
         uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          tags: arc-runner-poc:test
 
-      - name: POC completion
+        with:
+
+          context: .
+
+          file: ./Dockerfile
+
+          push: false
+
+          load: true
+
+          tags: arc-runner-poc:test
+ 
+      - name: Verify Built Image
+
         run: |
-          echo "Runner diagnostics completed."
-          echo "Image build stage was not enabled."
-          echo "No image was pushed to a registry."
-          echo "No Kubernetes resources were changed."
+
+          echo "=== Docker Images ==="
+
+          docker images
+ 
+          echo "=== Verify POC Image ==="
+
+          docker image inspect arc-runner-poc:test
+ 
+          echo "PASS: Docker image successfully built"
+ 
+      - name: POC Completion
+
+        run: |
+
+          echo "Git checkout successful"
+
+          echo "Docker image build successful"
+
+          echo "Registry push disabled"
+
+          echo "Kubernetes deployment not configured"
+ 
